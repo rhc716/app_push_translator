@@ -78,6 +78,16 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.setStringList('logs', strLogs);
   }
 
+  void _log(msg) {
+    final time = DateFormat('HH:mm:ss').format(DateTime.now());
+
+    setState(() {
+          logs.insert(0, {'title': '[LOG]', 'text': msg, 'time': time});
+          if (logs.length > maxLogs) logs.removeRange(maxLogs, logs.length);
+        });
+    _saveLogs();
+  }
+
   void _initNotificationListener() {
     if (_channelInitialized) return; // 이미 초기화 됐으면 중복 등록 안함
     _channelInitialized = true;
@@ -93,6 +103,41 @@ class _HomeScreenState extends State<HomeScreen> {
           if (logs.length > maxLogs) logs.removeRange(maxLogs, logs.length);
         });
         _saveLogs();
+      }
+
+      // 번역 모델 상태 보여주기
+      else if (call.method == 'modelStatus') {
+        final data = Map<String, dynamic>.from(call.arguments);
+        final status = data['status'] ?? 'unknown';
+        final error = data['error'] as String?;
+
+        String message;
+        switch (status) {
+          case 'downloading':
+            message = '번역 모델 다운로드 중...';
+            break;
+          case 'ready':
+            message = '번역 준비 완료!';
+            break;
+          case 'not_ready':
+            message = '번역 모델 없음 → 원문 표시';
+            break;
+          case 'failed':
+            message = '모델 다운로드 실패${error != null ? ': $error' : ''}';
+            break;
+          default:
+            message = '번역 상태: $status';
+        }
+        // 또는 SnackBar로 알림 (원하면 추가)
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      }
+
+      // TEST LOG
+      else if (call.method == 'TEST') {
+        final data = Map<String, dynamic>.from(call.arguments);
+        final msg = data['msg'] ?? 'unknown';
+
+        _log(msg);
       }
     });
   }
