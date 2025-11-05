@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,6 +49,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _channelInitialized = false;
   final int maxLogs = 500;
 
+  // Controllers to keep item-relative scroll position when inserting
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
+
   @override
   void initState() {
     super.initState();
@@ -81,11 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _log(msg) {
     final time = DateFormat('HH:mm:ss').format(DateTime.now());
 
-    setState(() {
-          logs.insert(0, {'title': '[LOG]', 'text': msg, 'time': time});
-          if (logs.length > maxLogs) logs.removeRange(maxLogs, logs.length);
-        });
-    _saveLogs();
+    _insertAtTopPreservingScroll({'title': '[LOG]', 'text': msg, 'time': time});
   }
 
   void _initNotificationListener() {
@@ -98,11 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final text = data['text'] ?? '';
         final time = DateFormat('HH:mm:ss').format(DateTime.now());
 
-        setState(() {
-          logs.insert(0, {'title': title, 'text': text, 'time': time});
-          if (logs.length > maxLogs) logs.removeRange(maxLogs, logs.length);
-        });
-        _saveLogs();
+        _insertAtTopPreservingScroll({'title': title, 'text': text, 'time': time});
       }
 
       // 번역 모델 상태 보여주기
@@ -188,22 +185,44 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("X 푸시 로그 (${logs.length}/$maxLogs)"),
+        title: Text.rich(
+          TextSpan(
+            text: "X PUSH 번역 기록 ",
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17
+            ), // 기본 텍스트 색상
+            children: [
+              TextSpan(
+                text: " [${logs.length}/$maxLogs]", // 괄호 안의 텍스트
+                style: const TextStyle(
+                  color: Color.fromARGB(255, 105, 170, 224),
+                  fontSize: 17
+                ), 
+              ),
+            ],
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.clear_all),
+            icon: const Icon(Icons.delete),
             onPressed: _confirmClearLogs,
           ),
         ],
       ),
-      body: logs.isEmpty
-          ? const Center(
-              child: Text("X 푸시를 기다리는 중...",
-                  style: TextStyle(color: Color(0xFFD4D4D4))),
-            )
-          : ListView.separated(
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: logs.isEmpty
+            ? const Center(
+                child: Text("X 푸시를 기다리는 중...",
+                    style: TextStyle(color: Color(0xFFD4D4D4))),
+              )
+            : ScrollablePositionedList.separated(
               reverse: true,
               itemCount: logs.length,
+              itemScrollController: _itemScrollController,
+              itemPositionsListener: _itemPositionsListener,
               separatorBuilder: (_, __) => const Divider(
                 color: Color(0xFF3C3C3C), // 구분선 색
                 height: 1,
@@ -212,26 +231,88 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (_, i) {
                 final log = logs[i];
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                   child: ListTile(
-                    title: Text(
-                      '[${log['time']}] ${log['title']}',
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        color: Color(0xFF569CD6),
+                    title: Text.rich(
+                      TextSpan(
+                        text: '[${logs.length - i}]', // 인덱스를 가장 왼쪽에 추가
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          color: Color.fromARGB(255, 105, 170, 224),
+                          fontSize: 13.5
+                        ),
+                        children: [
+                          TextSpan(
+                            text: ' ${log['time']} ',
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              color: Color.fromARGB(255, 57, 147, 221),
+                              fontSize: 13.5,
+                            ),
+                            children: [
+                              TextSpan(
+                                text: '${log['title']}',
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  color: Color.fromARGB(255, 145, 112, 206),
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                            ]
+                          ),
+                        ],
                       ),
                     ),
                     subtitle: Text(
                       log['text'] ?? '',
                       style: const TextStyle(
                         fontFamily: 'monospace',
-                        color: Color(0xFFD4D4D4),
+                        color: Color.fromARGB(255, 4, 170, 67),
+                        fontSize: 14.5
                       ),
                     ),
                   ),
                 );
               },
             ),
+  ),
     );
+  }
+
+  /// Insert a log at the top (index 0) while trying to keep the previously
+  /// visible item anchored in the viewport. We capture the first visible
+  /// item's index and leading fraction, insert, then jump to the same item
+  /// (which shifts to index+1 after insertion) with the same alignment.
+  void _insertAtTopPreservingScroll(Map<String, String> entry) {
+    final positions = _itemPositionsListener.itemPositions.value;
+    int anchorIndex = -1;
+
+    if (positions.isNotEmpty) {
+      // choose the visible item with the smallest index (closest to start)
+      final first = positions.reduce((a, b) => a.index < b.index ? a : b);
+      anchorIndex = first.index;
+    }
+
+    setState(() {
+      logs.insert(0, entry);
+      if (logs.length > maxLogs) logs.removeRange(maxLogs, logs.length);
+    });
+    _saveLogs();
+
+    if (anchorIndex >= 0) {
+      // Schedule after frame so the list has updated
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final targetIndex = anchorIndex + 1;
+        if (_itemScrollController.isAttached) {
+          try {
+            // Align to start of viewport so the previously visible item
+            // remains visible (positioned at the start).
+            _itemScrollController.jumpTo(index: targetIndex, alignment: 0.0);
+          } catch (e) {
+            // ignore failures (out of range, etc.)
+          }
+        }
+      });
+    }
   }
 }
