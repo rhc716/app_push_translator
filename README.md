@@ -1,20 +1,40 @@
 # app_push_translator
 
-A new Flutter project.
+> **Flutter 기반 안드로이드 전용 앱**  
+> **Galaxy S23 (Android 16)에서 개발 및 테스트**
 
-안드로이드 전용 (S23 안드로이드16 버전에서 개발함)
+---
 
-만든 이유
-- 국제 뉴스 등을 구독하다보니.. 너무 많은 PUSH를 받아서 번역과정을 간단히 하기 위해
+## 📌 만든 이유
+국제 뉴스를 구독하다 보니 너무 많은 푸시 알림을 받게 되어, 번역 과정을 간단히 하기 위해 제작
 
-기능
-1. X(구 트위터)에서 PUSH를 수신하면 PUSH 내용을 구글번역으로 
-   (최초 번역 모델 다운로드 후 번역 진행) EN -> KR 번역해서 리스트로 보여줌
-2. 한국어나 다른 언어는 그대로 유지
-3. 500개 까지 리스트를 유지하고, 삭제 기능
-4. 확인한 곳 까지 스크롤 유지
+---
 
-* X PUSH 에 대해서만 필터링을 걸어놓음 (아래 코드)
-android\app\src\main\kotlin\com\example\push_app\MyNotificationListener.kt
-// x 앱 알림만 처리
-if (sbn.packageName != "com.twitter.android") return
+## ✨ 주요 기능
+1. **X (구 트위터) 푸시 알림 번역**  
+   - X 앱에서 수신한 푸시 알림 내용을 **Google 번역**을 통해 EN → KR로 번역.  
+   - 최초 실행 시 번역 모델 다운로드 후 번역 진행.
+
+2. **언어 필터링**  
+   - 한국어나 다른 언어로 된 알림은 번역하지 않고 그대로 유지.
+
+3. **리스트 관리**  
+   - 최대 **500개**의 알림을 리스트로 유지.  
+   - **삭제 버튼**.
+
+4. **스크롤 위치 유지**  
+   - 확인한 위치까지 스크롤 상태를 유지.
+
+---
+
+## 🛠️ 구현 세부 사항
+- **푸시 알림 필터링**  
+  X 앱(구 트위터)에서 수신한 알림만 처리하도록 필터링. 
+  아래 코드:
+
+  ```kotlin
+  // filepath: android\app\src\main\kotlin\com\example\push_app\MyNotificationListener.kt
+
+  // X 앱 알림만 처리
+  if (sbn.packageName != "com.twitter.android") return
+  ```
