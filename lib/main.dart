@@ -41,7 +41,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   static const platform = MethodChannel('notification_channel');
 
   List<Map<String, String>> logs = []; // title, text, time
@@ -53,12 +53,50 @@ class _HomeScreenState extends State<HomeScreen> {
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
 
+  int _pendingScrollCount = 0; // 백그라운드 상태에서 누적된 스크롤 카운트
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // 리스너 추가
     _loadLogs();
     _initNotificationListener();
     _checkAndRequestPermission();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // 리스너 제거
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 포어그라운드로 전환될 때, 누적된 스크롤 처리
+      if (_pendingScrollCount > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_itemScrollController.isAttached) {
+            try {
+              // 현재 스크롤 위치를 가져와서 _pendingScrollCount를 더함
+              final currentPosition = _itemPositionsListener.itemPositions.value
+                  .reduce((a, b) => a.index < b.index ? a : b)
+                  .index;
+              final targetIndex = currentPosition + _pendingScrollCount;
+
+              _itemScrollController.jumpTo(
+                index: targetIndex,
+                alignment: 0.0,
+              );
+
+              _pendingScrollCount = 0; // 처리 후 초기화
+            } catch (e) {
+              print('스크롤 이동 중 오류 발생: $e');
+            }
+          }
+        });
+      }
+    }
   }
 
   void _loadLogs() async {
@@ -279,16 +317,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Insert a log at the top (index 0) while trying to keep the previously
-  /// visible item anchored in the viewport. We capture the first visible
-  /// item's index and leading fraction, insert, then jump to the same item
-  /// (which shifts to index+1 after insertion) with the same alignment.
+  /// 로그를 맨 위(index 0)에 추가하면서, 이전에 보이던 항목이 뷰포트에 고정되도록 유지합니다.
+  /// 백그라운드 상태에서는 스크롤 이동을 누적 처리합니다.
   void _insertAtTopPreservingScroll(Map<String, String> entry) {
     final positions = _itemPositionsListener.itemPositions.value;
-    int anchorIndex = 1;
+    int anchorIndex = -1;
 
     if (positions.isNotEmpty) {
-      // choose the visible item with the smallest index (closest to start)
+      // 현재 화면에 보이는 첫 번째 항목의 인덱스를 가져옴
       final first = positions.reduce((a, b) => a.index < b.index ? a : b);
       anchorIndex = first.index;
     }
@@ -299,20 +335,23 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     _saveLogs();
 
-    if (anchorIndex >= 0) {
-      // Schedule after frame so the list has updated
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final targetIndex = anchorIndex + 1;
-        if (_itemScrollController.isAttached) {
-          try {
-            // Align to start of viewport so the previously visible item
-            // remains visible (positioned at the start).
-            _itemScrollController.jumpTo(index: targetIndex, alignment: 0.0);
-          } catch (e) {
-            // ignore failures (out of range, etc.)
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      // 포어그라운드 상태에서는 기존 로직 유지
+      if (anchorIndex >= 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final targetIndex = anchorIndex + 1;
+          if (_itemScrollController.isAttached) {
+            try {
+              _itemScrollController.jumpTo(index: targetIndex, alignment: 0.0);
+            } catch (e) {
+              print('스크롤 이동 중 오류 발생: $e');
+            }
           }
-        }
-      });
+        });
+      }
+    } else {
+      // 백그라운드 상태에서는 스크롤 이동을 누적
+      _pendingScrollCount++;
     }
   }
 }
