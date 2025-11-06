@@ -285,7 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// (which shifts to index+1 after insertion) with the same alignment.
   void _insertAtTopPreservingScroll(Map<String, String> entry) {
     final positions = _itemPositionsListener.itemPositions.value;
-    int anchorIndex = -1;
+    int anchorIndex = 1;
 
     if (positions.isNotEmpty) {
       // choose the visible item with the smallest index (closest to start)
