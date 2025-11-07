@@ -124,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _log(msg) {
     final time = DateFormat('HH:mm:ss').format(DateTime.now());
 
-    _insertAtTopPreservingScroll({'title': '[LOG]', 'text': msg, 'time': time});
+    _insertAtTopPreservingScroll({'title': '[시스템 LOG]', 'text': msg, 'time': time});
   }
 
   void _initNotificationListener() {
@@ -138,33 +138,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         final time = DateFormat('HH:mm:ss').format(DateTime.now());
 
         _insertAtTopPreservingScroll({'title': title, 'text': text, 'time': time});
-      }
-
-      // 번역 모델 상태 보여주기
-      else if (call.method == 'modelStatus') {
-        final data = Map<String, dynamic>.from(call.arguments);
-        final status = data['status'] ?? 'unknown';
-        final error = data['error'] as String?;
-
-        String message;
-        switch (status) {
-          case 'downloading':
-            message = '번역 모델 다운로드 중...';
-            break;
-          case 'ready':
-            message = '번역 준비 완료!';
-            break;
-          case 'not_ready':
-            message = '번역 모델 없음 → 원문 표시';
-            break;
-          case 'failed':
-            message = '모델 다운로드 실패${error != null ? ': $error' : ''}';
-            break;
-          default:
-            message = '번역 상태: $status';
-        }
-        // 또는 SnackBar로 알림 (원하면 추가)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
 
       // TEST LOG

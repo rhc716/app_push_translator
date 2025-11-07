@@ -6,6 +6,9 @@ import io.flutter.plugin.common.MethodChannel
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
+import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.common.model.RemoteModelManager
+import com.google.mlkit.nl.translate.TranslateRemoteModel
 
 class MyNotificationListener : NotificationListenerService() {
 
@@ -20,12 +23,26 @@ class MyNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
-        prepareModel()
+        // 번역 모델 준비
+        prepareModel()        
+    }
+
+    private fun shouldUpdateModel(): Boolean {
+        val prefs = getSharedPreferences("MyNotificationListener", MODE_PRIVATE)
+        val lastUpdate = prefs.getLong("lastModelUpdate", 0)
+        val currentTime = System.currentTimeMillis()
+        val updateInterval = 7 * 24 * 60 * 60 * 1000 // 7일 (밀리초 단위)
+
+        return (currentTime - lastUpdate) > updateInterval
+    }
+
+    private fun saveModelUpdateTime() {
+        val prefs = getSharedPreferences("MyNotificationListener", MODE_PRIVATE)
+        prefs.edit().putLong("lastModelUpdate", System.currentTimeMillis()).apply()
     }
 
     private var lastTitle: String? = null
     private var lastText: String? = null
-    private var isModelReady = false
 
     // 번역기 한 번만 생성
     private val translator by lazy {
@@ -36,20 +53,51 @@ class MyNotificationListener : NotificationListenerService() {
         Translation.getClient(options)
     }
 
-    // 앱 시작 시 한 번만 호출 (MainActivity에서)
+    // 모델 준비
     fun prepareModel() {
-        if (isModelReady) return
+        val modelManager = RemoteModelManager.getInstance()
+        val targetModel = TranslateRemoteModel.Builder(TranslateLanguage.KOREAN).build()
 
-        channel?.invokeMethod("modelStatus", mapOf("status" to "downloading"))
+        modelManager.getDownloadedModels(TranslateRemoteModel::class.java)
+            .addOnSuccessListener { downloadedModels ->
+                val isModelAlreadyDownloaded = downloadedModels.contains(targetModel)
 
-        translator.downloadModelIfNeeded()
-            .addOnSuccessListener {
-                isModelReady = true
-                channel?.invokeMethod("modelStatus", mapOf("status" to "ready"))
+                if (isModelAlreadyDownloaded) {
+                    // log("한국어 모델이 이미 다운로드되어 있습니다.")
+                } else {
+                    log("한국어 모델이 아직 다운로드되지 않았습니다. 다운로드를 시도합니다.")
+                    translator.downloadModelIfNeeded()
+                        .addOnSuccessListener {
+                            saveModelUpdateTime()
+                            log("한국어 모델이 성공적으로 다운로드되었습니다.")
+                        }
+                        .addOnFailureListener { exception ->
+                            log("한국어 모델 다운로드에 실패했습니다: ${exception.message}")
+                        }
+                }
             }
-            .addOnFailureListener {
-                channel?.invokeMethod("modelStatus", mapOf("status" to "failed"))
+            .addOnFailureListener { exception ->
+                log("다운로드된 번역 모델 목록을 가져오는 데 실패했습니다: ${exception.message}")
+                translator.downloadModelIfNeeded()
+                    .addOnSuccessListener {
+                        saveModelUpdateTime()
+                        log("한국어 모델이 성공적으로 다운로드되었거나 이미 존재했습니다.")
+                    }
+                    .addOnFailureListener { downloadException ->
+                        log("한국어 모델 다운로드에 실패했습니다: ${downloadException.message}")
+                    }
             }
+        // 그리고 업데이트 주기마다 체크
+        if (shouldUpdateModel()) {
+            translator.downloadModelIfNeeded()
+                .addOnSuccessListener {
+                    saveModelUpdateTime()
+                    log("한국어 모델이 최신 버전으로 준비되었습니다.")
+                }
+                .addOnFailureListener { exception ->
+                    log("한국어 모델 업데이트에 실패했습니다: ${exception.message}")
+                }
+        }
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
@@ -71,15 +119,7 @@ class MyNotificationListener : NotificationListenerService() {
         lastTitle = title
         lastText = text
 
-        // 모델 없으면 원문 바로 전송 + 상태 알림
-        if (!isModelReady) {
-            channel?.invokeMethod("modelStatus", mapOf("status" to "not_ready"))
-            val data = mapOf("title" to title, "text" to text)
-            channel?.invokeMethod("onNotificationReceived", data)
-            return
-        }
-
-        // 모델 있으면 번역
+        // 번역
         translateText(text) { result ->
             val translatedText = result.getOrDefault(text)
         val data = mapOf(
